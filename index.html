@@ -86,6 +86,7 @@ function cargar() {
   api({ accion: 'estado', obra: OBRA, token: getToken() }).then(function (r) {
     if (!r.ok) { mostrarError(r.msg, true); return; }
     document.getElementById('obra').textContent = r.obra;
+    if (r.pendiente) { pantallaPendiente(r.trabajador); return; }
     if (r.registrar) { setToken(''); pantallaRegistro(); return; }
     pantallaPrincipal(r);
   }).catch(function () { mostrarError('Sin conexión. Revisa tus datos móviles e intenta de nuevo.', true); });
@@ -103,9 +104,20 @@ function pantallaRegistro(msg) {
     this.disabled = true; this.textContent = 'Verificando…';
     api({ accion: 'registrar', cedula: ced }).then(function (r) {
       if (!r.ok) { pantallaRegistro(r.msg); return; }
-      setToken(r.token); cargar();
+      setToken(r.token);
+      if (r.pendiente) { pantallaPendiente(r.nombre); return; }
+      cargar();
     }).catch(function () { pantallaRegistro('Sin conexión. Intenta de nuevo.'); });
   };
+}
+
+function pantallaPendiente(nombre) {
+  vista.innerHTML = '<div class="ok"><div class="icono">⏳</div>' +
+    '<div class="accion" style="font-size:22px">Celular nuevo en espera</div>' +
+    '<div class="det">Hola' + (nombre ? ', <b>' + esc(String(nombre).split(' ')[0]) + '</b>' : '') +
+    '. Ya tenías otro celular registrado, así que este debe ser <b>aprobado por la oficina</b> antes de poder marcar.</div>' +
+    '<div class="det" style="margin-top:14px">Avísale a la oficina o al encargado. Cuando lo aprueben, vuelve a escanear el QR.</div>' +
+    '<button class="sec" style="margin-top:20px" onclick="cargar()">Ya me aprobaron</button></div>';
 }
 
 function pantallaPrincipal(r) {
@@ -130,6 +142,7 @@ function marcar() {
     api({ accion: 'marcar', obra: OBRA, token: getToken(), quiere: QUIERE,
           lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) })
       .then(function (r) {
+        if (r.pendiente) { pantallaPendiente(r.trabajador); return; }
         if (r.registrar) { setToken(''); pantallaRegistro(r.msg); return; }
         if (r.recargar) { msg.innerHTML = '<div class="err">' + esc(r.msg) + '</div><button class="sec" style="margin-top:12px" onclick="cargar()">Actualizar</button>'; btn.style.display = 'none'; return; }
         if (!r.ok) { fallo(r.msg); return; }
