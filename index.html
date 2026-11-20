@@ -57,6 +57,7 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbycxcoYkq-N8ZeD9jG6jLMx0G
 var OBRA = new URLSearchParams(location.search).get('obra') || '';
 var KEY = 'asistencia_token_v1';
 var vista = document.getElementById('vista');
+var QUIERE = '';
 
 function getToken() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
 function setToken(t) { try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY); } catch (e) {} }
@@ -109,6 +110,7 @@ function pantallaRegistro(msg) {
 
 function pantallaPrincipal(r) {
   var esSalida = r.siguiente === 'SALIDA';
+  QUIERE = esSalida ? 'SALIDA' : 'ENTRADA';
   var info = esSalida ? 'Entraste a las ' + r.desde
            : (r.abiertoEn ? 'Tienes un turno abierto en ' + r.abiertoEn + ' (desde ' + r.desde + '). Al marcar aquí se cierra allá.' : 'Aún no has marcado entrada.');
   vista.innerHTML =
@@ -125,10 +127,11 @@ function marcar() {
   if (!navigator.geolocation) { fallo('Este celular no permite ubicación.'); return; }
   navigator.geolocation.getCurrentPosition(function (p) {
     btn.textContent = 'Registrando…';
-    api({ accion: 'marcar', obra: OBRA, token: getToken(),
+    api({ accion: 'marcar', obra: OBRA, token: getToken(), quiere: QUIERE,
           lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) })
       .then(function (r) {
         if (r.registrar) { setToken(''); pantallaRegistro(r.msg); return; }
+        if (r.recargar) { msg.innerHTML = '<div class="err">' + esc(r.msg) + '</div><button class="sec" style="margin-top:12px" onclick="cargar()">Actualizar</button>'; btn.style.display = 'none'; return; }
         if (!r.ok) { fallo(r.msg); return; }
         pantallaOk(r);
       }).catch(function () { fallo('Sin conexión. Revisa tus datos e intenta de nuevo.'); });
@@ -145,6 +148,13 @@ function marcar() {
 
 function pantallaOk(r) {
   var entrada = r.accion === 'ENTRADA';
+  if (r.repetido) {
+    vista.innerHTML = '<div class="ok"><div class="icono">ℹ️</div>' +
+      '<div class="accion">' + esc(r.msg) + '</div>' +
+      '<div class="det">' + (entrada ? 'Entrada' : 'Salida') + ' a las <b>' + esc(r.hora) + '</b> · ' + esc(r.obra) + '</div>' +
+      '<div class="det" style="margin-top:18px">No se registró nada nuevo. Ya puedes cerrar esta página.</div></div>';
+    return;
+  }
   vista.innerHTML = '<div class="ok">' +
     '<div class="icono">' + (entrada ? '✅' : '👋') + '</div>' +
     '<div class="accion" style="color:' + (entrada ? 'var(--verde)' : 'var(--naranja)') + '">' + (entrada ? 'ENTRADA' : 'SALIDA') + ' REGISTRADA</div>' +
