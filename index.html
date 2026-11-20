@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex">
+<title>Asistencia en obra</title>
+<style>
+  :root { --azul:#1f3a5f; --verde:#1e8e3e; --naranja:#d9480f; --gris:#6b7280; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:#f2f4f7; color:#111; min-height:100vh; }
+  header { background:var(--azul); color:#fff; padding:18px 20px; text-align:center; }
+  header .lbl { font-size:13px; opacity:.8; text-transform:uppercase; letter-spacing:1px; }
+  header .obra { font-size:22px; font-weight:700; margin-top:4px; }
+  main { max-width:460px; margin:0 auto; padding:22px 18px 40px; }
+  .reloj { text-align:center; font-size:46px; font-weight:700; margin:6px 0 2px; font-variant-numeric:tabular-nums; }
+  .fecha { text-align:center; color:var(--gris); margin-bottom:22px; text-transform:capitalize; }
+  .card { background:#fff; border-radius:16px; padding:22px; box-shadow:0 2px 10px rgba(0,0,0,.06); }
+  .hola { font-size:20px; text-align:center; margin:0 0 6px; }
+  .info { text-align:center; color:var(--gris); margin:0 0 20px; font-size:15px; }
+  button.big { width:100%; border:0; border-radius:14px; padding:26px 10px; font-size:26px; font-weight:800;
+               color:#fff; letter-spacing:1px; cursor:pointer; }
+  button.big:disabled { opacity:.6; }
+  .entrada { background:var(--verde); } .salida { background:var(--naranja); }
+  input { width:100%; font-size:24px; padding:14px; border:2px solid #d0d5dd; border-radius:12px; text-align:center;
+          letter-spacing:2px; margin:10px 0 16px; }
+  button.sec { width:100%; border:0; border-radius:12px; padding:16px; font-size:19px; font-weight:700;
+               background:var(--azul); color:#fff; }
+  .ok { text-align:center; }
+  .ok .icono { font-size:72px; line-height:1; }
+  .ok .accion { font-size:28px; font-weight:800; margin:10px 0 4px; }
+  .ok .hora { font-size:40px; font-weight:800; }
+  .ok .det { color:var(--gris); margin-top:8px; font-size:16px; }
+  .err { background:#fdecea; color:#8a1c12; border-radius:12px; padding:16px; margin-top:16px; font-size:16px; text-align:center; }
+  .cargando { text-align:center; color:var(--gris); padding:30px 0; font-size:18px; }
+  .pie { text-align:center; color:#9aa0a6; font-size:12px; margin-top:26px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="lbl">Registro de asistencia</div>
+  <div class="obra" id="obra">…</div>
+</header>
+<main>
+  <div class="reloj" id="reloj">--:--</div>
+  <div class="fecha" id="fecha"></div>
+  <div class="card" id="vista"><div class="cargando">Cargando…</div></div>
+  <div class="pie">Tu ubicación solo se usa para confirmar que estás en la obra al marcar.</div>
+</main>
+
+<script>
+// ⬇⬇⬇  Enlace de la app de Google Apps Script (termina en /exec)  ⬇⬇⬇
+var API_URL = 'https://script.google.com/macros/s/AKfycbycxcoYkq-N8ZeD9jG6jLMx0GNTvl3DQiUI7BuhP65TZY4ZhoHq5kk3sD06LIBk3uS_fg/exec';
+// ⬆⬆⬆
+
+var OBRA = new URLSearchParams(location.search).get('obra') || '';
+var KEY = 'asistencia_token_v1';
+var vista = document.getElementById('vista');
+
+function getToken() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+function setToken(t) { try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY); } catch (e) {} }
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+function reloj() {
+  var n = new Date();
+  document.getElementById('reloj').textContent = n.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Bogota' });
+  document.getElementById('fecha').textContent = n.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Bogota' });
+}
+reloj(); setInterval(reloj, 10000);
+
+function api(datos) {
+  return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(datos) })
+    .then(function (r) { return r.json(); });
+}
+
+function mostrarError(msg, conReintento) {
+  vista.innerHTML = '<div class="err">' + esc(msg) + '</div>' +
+    (conReintento ? '<button class="sec" style="margin-top:16px" onclick="cargar()">Intentar de nuevo</button>' : '');
+}
+
+function cargar() {
+  vista.innerHTML = '<div class="cargando">Cargando…</div>';
+  if (!OBRA) { document.getElementById('obra').textContent = '—'; mostrarError('Escanea el código QR de la obra para abrir esta página.'); return; }
+  api({ accion: 'estado', obra: OBRA, token: getToken() }).then(function (r) {
+    if (!r.ok) { mostrarError(r.msg, true); return; }
+    document.getElementById('obra').textContent = r.obra;
+    if (r.registrar) { setToken(''); pantallaRegistro(); return; }
+    pantallaPrincipal(r);
+  }).catch(function () { mostrarError('Sin conexión. Revisa tus datos móviles e intenta de nuevo.', true); });
+}
+
+function pantallaRegistro(msg) {
+  vista.innerHTML =
+    '<p class="hola">Primera vez en este celular</p>' +
+    '<p class="info">Escribe tu número de cédula. Solo se pide una vez.</p>' +
+    '<input id="ced" type="tel" inputmode="numeric" autocomplete="off" placeholder="Número de cédula">' +
+    '<button class="sec" id="btnReg">Continuar</button>' +
+    (msg ? '<div class="err">' + esc(msg) + '</div>' : '');
+  document.getElementById('btnReg').onclick = function () {
+    var ced = document.getElementById('ced').value;
+    this.disabled = true; this.textContent = 'Verificando…';
+    api({ accion: 'registrar', cedula: ced }).then(function (r) {
+      if (!r.ok) { pantallaRegistro(r.msg); return; }
+      setToken(r.token); cargar();
+    }).catch(function () { pantallaRegistro('Sin conexión. Intenta de nuevo.'); });
+  };
+}
+
+function pantallaPrincipal(r) {
+  var esSalida = r.siguiente === 'SALIDA';
+  var info = esSalida ? 'Entraste a las ' + r.desde
+           : (r.abiertoEn ? 'Tienes un turno abierto en ' + r.abiertoEn + ' (desde ' + r.desde + '). Al marcar aquí se cierra allá.' : 'Aún no has marcado entrada.');
+  vista.innerHTML =
+    '<p class="hola">Hola, <b>' + esc(r.trabajador.split(' ')[0]) + '</b></p>' +
+    '<p class="info">' + esc(info) + '</p>' +
+    '<button class="big ' + (esSalida ? 'salida' : 'entrada') + '" id="btn">' + (esSalida ? 'MARCAR SALIDA' : 'MARCAR ENTRADA') + '</button>' +
+    '<div id="msg"></div>';
+  document.getElementById('btn').onclick = marcar;
+}
+
+function marcar() {
+  var btn = document.getElementById('btn'), msg = document.getElementById('msg');
+  btn.disabled = true; btn.textContent = 'Ubicando…'; msg.innerHTML = '';
+  if (!navigator.geolocation) { fallo('Este celular no permite ubicación.'); return; }
+  navigator.geolocation.getCurrentPosition(function (p) {
+    btn.textContent = 'Registrando…';
+    api({ accion: 'marcar', obra: OBRA, token: getToken(),
+          lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) })
+      .then(function (r) {
+        if (r.registrar) { setToken(''); pantallaRegistro(r.msg); return; }
+        if (!r.ok) { fallo(r.msg); return; }
+        pantallaOk(r);
+      }).catch(function () { fallo('Sin conexión. Revisa tus datos e intenta de nuevo.'); });
+  }, function (e) {
+    if (e.code === 1) fallo('Debes PERMITIR la ubicación para marcar. iPhone: Ajustes › Privacidad › Localización › Safari › "Al usar la app". Android: toca el candado junto a la dirección › Permisos › Ubicación.');
+    else fallo('No se pudo obtener la ubicación. Activa el GPS, sal a cielo abierto e intenta de nuevo.');
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+
+  function fallo(t) {
+    btn.disabled = false; btn.textContent = 'INTENTAR DE NUEVO';
+    msg.innerHTML = '<div class="err">' + esc(t) + '</div>';
+  }
+}
+
+function pantallaOk(r) {
+  var entrada = r.accion === 'ENTRADA';
+  vista.innerHTML = '<div class="ok">' +
+    '<div class="icono">' + (entrada ? '✅' : '👋') + '</div>' +
+    '<div class="accion" style="color:' + (entrada ? 'var(--verde)' : 'var(--naranja)') + '">' + (entrada ? 'ENTRADA' : 'SALIDA') + ' REGISTRADA</div>' +
+    '<div class="hora">' + esc(r.hora) + '</div>' +
+    '<div class="det">' + esc(r.obra) + '</div>' +
+    (r.duracion ? '<div class="det">Trabajaste <b>' + esc(r.duracion) + '</b></div>' : '') +
+    (r.msg ? '<div class="det">' + esc(r.msg) + '</div>' : '') +
+    '<div class="det" style="margin-top:18px">Ya puedes cerrar esta página.</div></div>';
+}
+
+cargar();
+</script>
+</body>
+</html>
